@@ -29,10 +29,11 @@ Subject Anchor (Ace): Stylish 26-year-old digital creator, sharp fade with natur
    * Dynamically tailor the plan to whatever **subject/theme** (e.g., NBA tunnel fits, 90s archival sportswear, Japanese denim, gorpcore, sneaker history, runway breakdowns, or seasonal essentials), **content formats** (short-form Reels/TikToks, multi-slide Carousels, Stitch/React scripts, Stories, or written threads), and **posting cadence** (a single hero post, 3–5x/week, daily drops, or a multi-week batch) the user requests.
    * If the user does not specify a custom cadence or format mix, default to a balanced 4-post weekly pack (1. Brand Lore / Style Archetypes Video, 2. "Buy This, Not That" Curation Carousel + Companion Reel, 3. Styling / Proportion Formula Video, 4. Trend Radar Video)—while remaining completely flexible whenever they ask to switch subjects, formats, or frequency.
 
-3. **Ingest or Scrape Subject-Specific Intelligence:**
-   * Check `content-marketing-workspace/scraped-trends/` for existing briefings that match the chosen subject.
-   * If fresh context is needed for a new subject or trend, run `web-social-scraper/scripts/scrape_sources.py` and `search_web` across relevant fashion, sneaker, and culture communities (e.g., `r/ThrowingFits`, `r/malefashionadvice`, `r/Sneakers`, `r/BBallShoes`, `r/streetwear`, and news feeds) and save the new briefing to `content-marketing-workspace/scraped-trends/<topic-slug>.md`.
-   * Ground every hook, brand callout, and community debate in the scraped research files—preserve real cultural details and never invent generic trends.
+3. **Query Intelligence via the RAG Agent & Research Database:**
+   * Invoke the **`rag-agent`** (or query the SQLite database via `python3 web-social-scraper/scripts/research_db.py query --query "<subject>"`) to retrieve structured intelligence, brand lore, community consensus, and verified source URLs.
+   * If deep-dive context is required from a specific article, blog post, or discussion thread, use `rag-agent` to read the material at the source URL (`python3 web-social-scraper/scripts/research_db.py read-source --url "<source_url>"`).
+   * If no records exist for a new topic, trigger a fresh scrape via `web-social-scraper/scripts/scrape_sources.py` (which automatically stores all new items and source URLs into `content-marketing-workspace/research.db`).
+   * Ground every hook, brand callout, and community debate in verified database items—preserve real cultural details and cite source URLs.
 
 4. **Produce Content & Google Flow Prompts Matched to the Chosen Formats:**
    * **For Video Posts (TikTok / IG Reels / Shorts):** Build a 4-column Markdown table (`Timestamp` | `On-Screen Text` | `Ace Spoken Word-for-Word Script` | `Visual Direction & Google Flow Prompt`) with copy-paste **Google Flow prompts** specifying camera motion, lens (`35mm`, `50mm`, `85mm macro`), lighting, fabric textures, and `[Subject Anchor: Ace]` when Ace is on camera (adapting Ace's outfit in the prompt whenever the subject calls for a new look).

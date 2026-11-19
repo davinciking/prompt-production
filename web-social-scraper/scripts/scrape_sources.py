@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 import json
+from pathlib import Path
 import re
 import sys
 import urllib.error
@@ -69,14 +70,31 @@ class HTMLToMarkdownParser(HTMLParser):
         "hr",
     }
 
-    def __init__(self):
+    def __init__(self, base_url=""):
         super().__init__()
+        self.base_url = base_url
         self.ignore_depth = 0
         self.in_title = False
         self.title = ""
         self.chunks = []
         self.links = []
         self.meta_description = ""
+        self.og_image = ""
+        self.images = []
+
+    def _resolve_image_url(self, raw_url):
+        if not raw_url:
+            return ""
+        raw_url = raw_url.strip()
+        if raw_url.startswith("data:"):
+            return ""
+        resolved = urllib.parse.urljoin(self.base_url, raw_url) if self.base_url else raw_url
+        if not resolved.startswith(("http://", "https://")):
+            return ""
+        lowered = resolved.lower()
+        if any(skip in lowered for skip in (".svg", "1x1", "spacer", "pixel.", "tracking", "gravatar.com/avatar")):
+            return ""
+        return resolved
 
     def handle_starttag(self, tag, attrs):
         tag = tag.lower()
@@ -94,6 +112,22 @@ class HTMLToMarkdownParser(HTMLParser):
             content = attrs_dict.get("content") or ""
             if name in ("description", "og:description", "twitter:description") and not self.meta_description:
                 self.meta_description = content.strip()
+            elif name in ("og:image", "og:image:secure_url", "twitter:image", "twitter:image:src") and not self.og_image:
+                resolved = self._resolve_image_url(content)
+                if resolved:
+                    self.og_image = resolved
+        elif tag == "img":
+            src = (
+                attrs_dict.get("src")
+                or attrs_dict.get("data-src")
+                or attrs_dict.get("data-lazy-src")
+                or attrs_dict.get("data-original")
+                or ""
+            )
+            resolved = self._resolve_image_url(src)
+            if resolved:
+                alt = (attrs_dict.get("alt") or "").strip()
+                self.images.append({"url": resolved, "alt": alt})
         elif tag in ("h1", "h2", "h3", "h4"):
             level = int(tag[1])
             self.chunks.append(f"\n\n{'#' * level} ")
@@ -417,9 +451,23 @@ def scrape_single_url(url, max_chars=8000):
                 "content": decoded[:max_chars],
             }
 
-        parser = HTMLToMarkdownParser()
+        parser = HTMLToMarkdownParser(base_url=url)
         parser.feed(decoded)
         unique_links = list(dict.fromkeys(parser.links))[:25]
+
+        # Deduplicate extracted images, prioritizing og:image first
+        seen_imgs = set()
+        unique_images = []
+        if parser.og_image:
+            seen_imgs.add(parser.og_image)
+            unique_images.append({"url": parser.og_image, "alt": parser.title.strip() or "Hero / og:image", "kind": "og:image"})
+        for img in parser.images:
+            if img["url"] not in seen_imgs:
+                seen_imgs.add(img["url"])
+                unique_images.append({"url": img["url"], "alt": img.get("alt", ""), "kind": "img"})
+            if len(unique_images) >= 15:
+                break
+
         return {
             "url": url,
             "type": "webpage",
@@ -427,6 +475,8 @@ def scrape_single_url(url, max_chars=8000):
             "description": parser.meta_description,
             "content": parser.get_extracted_text(max_chars=max_chars),
             "outbound_links": unique_links,
+            "og_image": parser.og_image,
+            "images": unique_images,
         }
     except Exception as exc:
         return {"url": url, "error": str(exc)}
@@ -526,6 +576,17 @@ def main():
         help="Output format (markdown or json).",
     )
     parser.add_argument("--out", "-o", type=str, help="Optional file path to save output.")
+    parser.add_argument(
+        "--db",
+        type=Path,
+        default=Path("content-marketing-workspace/research.db"),
+        help="SQLite database path to automatically persist research and source URLs (default: content-marketing-workspace/research.db).",
+    )
+    parser.add_argument(
+        "--no-db",
+        action="store_true",
+        help="Disable automatic persistence to the SQLite research database.",
+    )
     args = parser.parse_args()
 
     if not args.query and not args.urls:
@@ -572,6 +633,16 @@ def main():
         with open(args.out, "w", encoding="utf-8") as fh:
             fh.write(output_text)
         print(f"Saved report to {args.out}", file=sys.stderr)
+
+    if not args.no_db:
+        try:
+            from research_db import get_connection, ingest_scrape_report
+
+            conn = get_connection(args.db)
+            saved_count = ingest_scrape_report(conn, report)
+            print(f"Persisted {saved_count} research items & source URLs to database: {args.db}", file=sys.stderr)
+        except Exception as exc:
+            print(f"Warning: Failed to save to research database ({args.db}): {exc}", file=sys.stderr)
 
     print(output_text)
 

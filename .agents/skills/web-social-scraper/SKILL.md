@@ -17,10 +17,10 @@ Use this skill whenever the user gives you a topic, product, event, or list of U
 ### Step 1: Broad Discovery (`search_web` + Multi-Platform Scraper)
 
 1. Run the built-in `search_web` tool for general web/blog/article discovery and X/Twitter/LinkedIn indexed posts (e.g., `site:x.com <topic>` or `site:reddit.com <topic>`).
-2. Run the bundled multi-platform scraper script [scrape_sources.py](../../scripts/scrape_sources.py) to pull live social posts, scores, engagement metrics, and news RSS items concurrently:
+2. Run the bundled multi-platform scraper script [scrape_sources.py](file:///Users/zacharymark/Documents/prompt-production/web-social-scraper/scripts/scrape_sources.py) to pull live social posts, scores, engagement metrics, and news RSS items concurrently. By default, it automatically saves all items and source URLs into the SQLite research database (`content-marketing-workspace/research.db`):
 
 ```bash
-python3 /Users/dee/.gemini/antigravity/scratch/web-social-scraper/scripts/scrape_sources.py \
+python3 web-social-scraper/scripts/scrape_sources.py \
   --query "<YOUR_TOPIC>" \
   --platforms reddit hackernews bluesky mastodon news \
   --limit 8 \
@@ -28,17 +28,21 @@ python3 /Users/dee/.gemini/antigravity/scratch/web-social-scraper/scripts/scrape
 ```
 
 > [!NOTE]
-> Because `scrape_sources.py` makes live HTTP requests to external APIs, run it with `BypassSandbox: true` if standard sandbox mode blocks outbound network access.
+> All scraped intelligence and source URLs are automatically indexed with FTS5 in `content-marketing-workspace/research.db`. To query or read materials at source URLs directly, use `web-social-scraper/scripts/research_db.py`.
 
-### Step 2: Deep Dive into Promising URLs & Threads
+### Step 2: Database Retrieval & Live Source URL Reading (RAG Agent Workflow)
 
-Take the highest-signal URLs (blog posts, news articles, Reddit threads with `/comments/`, or X/Twitter status URLs) discovered in Step 1 and extract their full article text and top comment trees:
+1. **Query the Research Database:**
+   ```bash
+   python3 web-social-scraper/scripts/research_db.py query --query "<KEYWORDS>" --limit 8
+   ```
 
-```bash
-python3 /Users/dee/.gemini/antigravity/scratch/web-social-scraper/scripts/scrape_sources.py \
-  --urls "https://www.reddit.com/r/.../comments/..." "https://example.com/blog-post" \
-  --format markdown
-```
+2. **Read Material at Source URLs:**
+   When deeper context, quotes, or thread discussion is needed from a specific source URL:
+   ```bash
+   python3 web-social-scraper/scripts/research_db.py read-source --url "<SOURCE_URL>"
+   ```
+   This automatically fetches, parses, and caches the full article body or Reddit discussion tree into the `source_materials` table.
 
 ### Step 3: Browser Fallback for JS-Heavy or Authenticated Pages
 
